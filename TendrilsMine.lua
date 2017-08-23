@@ -3,16 +3,12 @@
 --to config
 material = "minecraft:quartz_ore"
 inventoryMaterial = "minecraft:quartz"
-baseRadius = 5
-hasChargerInBase = false
+baseRadius = 3
+hasChargerInBase = true
+mapName = "turtleWorld"
+posName = "turtleCords"
 
 --control
-numMaterials=0
-mode = 1
-freeInventory = 0
-collectedResources = 0
-allSlotsEquipment = false
-hardReturn = false
 turtleDirection = 0
 --[[if turtle go forward: 
     direction 0 -> x++
@@ -21,6 +17,23 @@ turtleDirection = 0
     direction 3 -> y--
 --]]
 
+
+
+numMaterials
+mode
+freeInventory
+collectedResources
+allSlotsEquipment
+hardReturn
+
+function reset()
+    numMaterials=0
+    mode = 1
+    freeInventory = 0
+    collectedResources = 0
+    allSlotsEquipment = false
+    hardReturn = false
+end
 
 
 --Cords -> 3 numbers represent relative location to begining position
@@ -93,23 +106,30 @@ function Space.new ()
     local dim = {}
     dim[0] = {}
     dim[0][0] = {}
-    dim[0][0][0] = "turtle"
+    dim[0][0][0] = "turtleHome"
     return {dim = dim, pos=Cords.new()} 
 end
 
+function Space.hasChecked(space)
+    local dim = space.dim
+    local x, y, z = space.pos.x, space.pos.y, space.pos.z
+    if dim[x] ~= nil and dim[x][y] ~= nil and dim[x][y][z] == "checked"
+    then return true else return false end
+end
+
 function Space.update(space, cords, val)
-    local x, y, z = cords.x, cords.y, cords.z    
-    dim = space.dim
+    local x, y, z = cords.x, cords.y, cords.z
+    local dim = space.dim
 
     if dim[x] == nil then dim[x] = {} end
     if dim[x][y] == nil then dim[x][y] = {} end
 
     if val == material then 
-        if dim[x][y][z] ~= val then numMaterials = numMaterials + 1 end
-    elseif val == "void" then 
+        if dim[x][y][z] ~= val then numMaterials = numMaterials + 1 end --first time apperar
+    elseif val == "void" then --material will be mined
         numMaterials = numMaterials - 1
         collectedResources = collectedResources + 1
-    else print("ERROR: unknown material") end
+    elseif val ~= "checked" then print("ERROR: unknown material") end
     dim[x][y][z] = val
 end
 
@@ -156,11 +176,41 @@ function Space.findNearestMaterial(space)
     end
 end
 
+space = Space.new()
+
+--file functions
+function loadFile(filename)
+    local file = fs.open(filename, "r") --readonly
+    local struct = textutils.unserialize(file.readAll())
+    file.close()
+    return struct
+end
+
+function saveFile(filename, struct)
+    local file = fs.open(filename, "w") --rewrite file
+    file.write(textutils.serialize(struct))
+    file.close()
+end
+
+if fs.exists(mapName) then space.dim = loadFile(mapName) end -- works only in root dir
+if fs.exists(posName) then
+    local data = loadFile(posName)
+    turtleDirection = data.dir
+    space.pos = data.pos
+end
+
 function Space.changePos(space, direction)
     if direction == "up" then space.pos = Cords.add(space.pos, 0, 0, 1)
     elseif direction == "down" then space.pos = Cords.add(space.pos, 0, 0, -1)
     else space.pos = Cords.getPosAhead(space.pos) end
+
+    saveFile(posName, {dir = turtleDirection, pos = space.pos})
 end
+
+
+
+    
+
 
 
 
@@ -173,7 +223,7 @@ dirFun["up"]     = {turtle.detectUp, Cords.add, 1, turtle.digUp,
 dirFun["down"]   = {turtle.detectDown, Cords.add, -1, turtle.digDown, 
                     turtle.down, turtle.inspectDown}
 
-space = Space.new()
+
 
 function isInSecureRange(x, y, z)
     return math.abs(x) < baseRadius and math.abs(y) < baseRadius and math.abs(z) < baseRadius 
@@ -184,7 +234,7 @@ function checkTerrain(dir, onSuccesValue)
         local succes, data = dirFun[dir][6]()
         if succes and data.name == material then
             local cords = dirFun[dir][2](space.pos, 0, 0, dirFun[dir][3])
-            if isInSecureRange(cords.x, cords.y, cords.z) return false end
+            if isInSecureRange(cords.x, cords.y, cords.z) then return false end
             Space.update(space, cords, onSuccesValue)
             return true
         end
@@ -264,7 +314,7 @@ function turtleMove(dir)
         dirFun[dir][4]() end
     repeat 
         local isSuccess = dirFun[dir][5]() --move
-        if not isSuccess then print("trying to move") end
+        if not isSuccess then print("trying to move"); os.sleep(1) end
     until isSuccess 
     Space.changePos(space, dir) --tell map that turtle changed position
     
@@ -272,18 +322,30 @@ function turtleMove(dir)
     if not isEnoughFuel() or not isEnoughSpace() then hardReturn = true; mode = 3 end
 end
 
-function turtleTurn()
-    turtle.turnLeft()
-    turtleDirection = (turtleDirection + 1) % 4
+function turtleTurn(right)
+    if right then 
+        turtle.turnRight()
+        turtleDirection = (turtleDirection - 1) % 4
+    else
+        turtle.turnLeft()
+        turtleDirection = (turtleDirection + 1) % 4
+    end
 end
 
 function turtleSetDirection(direction)
-    while turtleDirection ~= direction do
-        turtleTurn()
+    if (turtleDirection - 1) % 4 == direction then 
+        turtleTurn(true)
+    else
+        while turtleDirection ~= direction do
+            turtleTurn()
+        end
     end
 end
 
 function lookAround()
+    if Space.hasChecked(space) then return false
+    else Space.update(space, space.pos, "checked") end
+    
     local finded = false
     for _=1,4 do
         if checkTerrain("normal", material) then finded = true end
@@ -327,7 +389,7 @@ function goToBasePoint()
     elseif isUnderInput(x, y, z) then goToTarget(Cords.add(space.pos, 0, 0, 1))
     elseif isOnBack(x, y, z) then goToTarget(Cords.add(Cords.new(), -baseRadius, baseRadius, 0))
     elseif isOnForward(x, y, z) then goToTarget(Cords.add(Cords.new(), baseRadius, 0, 0))
-    else print("ERROR: unknown variant")
+    else goToTarget(Cords.add(Cords.new(), baseRadius, 0, 0))
     end
 end
 
@@ -370,28 +432,31 @@ function goBack()
 end
 
 function charging()
-    local numOfcharges = -1
+    local numOfCharges = -1
     local chargeLevel = turtle.getFuelLevel()
+    local chargeStep
     local maxLevel = turtle.getFuelLimit()
     repeat
-        local percent = chargeLevel / maxLevel
-        print("charging: chargeLevel:", chargeLevel, " (", percent, "%)"
-        numOfcharges = numOfcharges + 1
+        local percent = math.ceil(100 * chargeLevel / maxLevel)
+        print("charging: chargeLevel:", chargeLevel, " (", percent, "%)")
+        numOfCharges = numOfCharges + 1
         os.sleep(1)
-        local chargeStep = chargeLevel
+        chargeStep = chargeLevel
         chargeLevel = turtle.getFuelLevel()
-    until chargeLevel ~= chargeStep
-
-    if numOfcharges == 0 then return false else return true end
+    until chargeLevel == chargeStep
+    if numOfCharges == 0 and maxLevel ~= chargeLevel then return false else return true end
 end
 
 function leaveItems()
+    local success, data = turtle.inspectDown()
+    if not success or data.name ~= "minecraft:chest" then return end
+
     local start = 15
     local data = turtle.getItemDetail(16)
     if data and data.name == inventoryMaterial then start = 16 end
     for i=start,1,-1 do
         turtle.select(i)
-        while not turtle.dropDown() do
+        while not turtle.dropDown() and turtle.getItemCount(i) ~= 0 do
             print("droping items - full inventory")
             os.sleep(1) 
         end
@@ -400,9 +465,9 @@ end
 
 numOfReturns = 0
 function mainLoop()
-    step = 1
+    reset()
     while mode ~= 0 do
-        print("Returns:",numOfReturns, " Step:", step, " Fuel: ", turtle.getFuelLevel())
+        print("Returns:", numOfReturns, " Step:", step, " Fuel: ", turtle.getFuelLevel())
         step = step + 1
         if mode == 1 then
             print("Resource searching mode")
@@ -415,8 +480,6 @@ function mainLoop()
             goBack()
         end
     end
-    turtleSetDirection(0)
-    leaveItems()
     numOfReturns = numOfReturns + 1
 end
 
@@ -424,7 +487,7 @@ end
 
 --main program
 turtle.select(16)
-if turtle.getFuelLevel() == 0 then 
+if turtle.getFuelLevel() < 10 then 
     print("No fuel - refueling from 16th slot")
     for i=5, 1, -1 do
         print(i)
@@ -434,12 +497,12 @@ if turtle.getFuelLevel() == 0 then
     else print("Still no fuel"); return end
 end
 
-print("Set item to mine (leave empty to set default:", material, "):")
-answer = io.read()
-if answer ~= "" then material = answer end
-print("Set item after minig (leave empty to set default:", inventoryMaterial, "):")
-answer = io.read()
-if answer ~= "" then inventoryMaterial = answer end
+--print("Set item to mine (leave empty to set default:", material, "):")
+--answer = io.read()
+--if answer ~= "" then material = answer end
+--print("Set item after minig (leave empty to set default:", inventoryMaterial, "):")
+--answer = io.read()
+--if answer ~= "" then inventoryMaterial = answer end
 
 cleanInventory()
 for i=1,16 do 
@@ -449,5 +512,8 @@ cleanInventory()
 
 repeat
     mainLoop()
+    leaveItems()
+    saveFile(mapName, space.dim)
+    turtleSetDirection(0)  
     if not charging() then break end
-until hasChargerInBase
+until not hasChargerInBase

@@ -1,6 +1,12 @@
 --global variable
+
+--to config
 material = "minecraft:quartz_ore"
 inventoryMaterial = "minecraft:quartz"
+baseRadius = 5
+hasChargerInBase = false
+
+--control
 numMaterials=0
 mode = 1
 freeInventory = 0
@@ -89,7 +95,6 @@ function Space.new ()
     dim[0][0] = {}
     dim[0][0][0] = "turtle"
     return {dim = dim, pos=Cords.new()} 
-
 end
 
 function Space.update(space, cords, val)
@@ -170,11 +175,16 @@ dirFun["down"]   = {turtle.detectDown, Cords.add, -1, turtle.digDown,
 
 space = Space.new()
 
+function isInSecureRange(x, y, z)
+    return math.abs(x) < baseRadius and math.abs(y) < baseRadius and math.abs(z) < baseRadius 
+end
+
 function checkTerrain(dir, onSuccesValue)
     if dirFun[dir][1]() then
         local succes, data = dirFun[dir][6]()
         if succes and data.name == material then
             local cords = dirFun[dir][2](space.pos, 0, 0, dirFun[dir][3])
+            if isInSecureRange(cords.x, cords.y, cords.z) return false end
             Space.update(space, cords, onSuccesValue)
             return true
         end
@@ -187,7 +197,7 @@ function isEnoughFuel()
     if fuel == "unlimited" then return true end
     local distance = Cords.distance(space.pos, Cords.new())
     turtle.select(16)
-    while fuel <= distance + 1 do
+    while fuel <= distance + 1 + 6 * baseRadius do
         if turtle.refuel(0) then 
             turtle.refuel(1)
             fuel = turtle.getFuelLevel()
@@ -254,6 +264,7 @@ function turtleMove(dir)
         dirFun[dir][4]() end
     repeat 
         local isSuccess = dirFun[dir][5]() --move
+        if not isSuccess then print("trying to move") end
     until isSuccess 
     Space.changePos(space, dir) --tell map that turtle changed position
     
@@ -283,7 +294,21 @@ function lookAround()
     return finded
 end
 
+function isOnInputPoint(x, y, z) return x == baseRadius and y == 0 and z == 0 end
 
+function isOnLayer(layer, x, c)
+    return math.abs(layer) == baseRadius 
+        and (math.abs(x) < baseRadius or x == -baseRadius)
+        and math.abs(c) <= baseRadius
+end
+
+function isOnBack(x, y, z) return x == -baseRadius end
+
+function isAboveInput(x, y, z) return z > 0 end
+
+function isUnderInput(x, y, z) return z < 0 end
+
+function isOnForward(x, y, z) return x == baseRadius end
 
 --main functions
 function goForward()
@@ -291,6 +316,18 @@ function goForward()
         mode = 2
     else 
         turtleMove("normal")
+    end
+end
+
+function goToBasePoint()
+    local x, y, z = space.pos.x, space.pos.y, space.pos.z
+    if isInSecureRange(x,y,z) or isOnInputPoint(x,y,z) then goToTarget(Cords.new())
+    elseif isOnLayer(y,x,z) or isOnLayer(z,x,y) then goToTarget(Cords.add(space.pos, 1, 0, 0))
+    elseif isAboveInput(x, y, z) then goToTarget(Cords.add(space.pos, 0, 0, -1))
+    elseif isUnderInput(x, y, z) then goToTarget(Cords.add(space.pos, 0, 0, 1))
+    elseif isOnBack(x, y, z) then goToTarget(Cords.add(Cords.new(), -baseRadius, baseRadius, 0))
+    elseif isOnForward(x, y, z) then goToTarget(Cords.add(Cords.new(), baseRadius, 0, 0))
+    else print("ERROR: unknown variant")
     end
 end
 
@@ -328,8 +365,59 @@ function goBack()
     elseif Cords.isZeroPosition(space.pos) then
         mode = 0
     else 
-        goToTarget(Cords.new())
+        goToBasePoint()
     end
+end
+
+function charging()
+    local numOfcharges = -1
+    local chargeLevel = turtle.getFuelLevel()
+    local maxLevel = turtle.getFuelLimit()
+    repeat
+        local percent = chargeLevel / maxLevel
+        print("charging: chargeLevel:", chargeLevel, " (", percent, "%)"
+        numOfcharges = numOfcharges + 1
+        os.sleep(1)
+        local chargeStep = chargeLevel
+        chargeLevel = turtle.getFuelLevel()
+    until chargeLevel ~= chargeStep
+
+    if numOfcharges == 0 then return false else return true end
+end
+
+function leaveItems()
+    local start = 15
+    local data = turtle.getItemDetail(16)
+    if data and data.name == inventoryMaterial then start = 16 end
+    for i=start,1,-1 do
+        turtle.select(i)
+        while not turtle.dropDown() do
+            print("droping items - full inventory")
+            os.sleep(1) 
+        end
+    end
+end
+
+numOfReturns = 0
+function mainLoop()
+    step = 1
+    while mode ~= 0 do
+        print("Returns:",numOfReturns, " Step:", step, " Fuel: ", turtle.getFuelLevel())
+        step = step + 1
+        if mode == 1 then
+            print("Resource searching mode")
+            goForward()
+        elseif mode == 2 then
+            print("Resource mining mode")        
+            mine()
+        elseif mode == 3 then
+            print("Return to start position")
+            goBack()
+        end
+    end
+    turtleSetDirection(0)
+    leaveItems()
+    numOfReturns = numOfReturns + 1
 end
 
 
@@ -359,21 +447,7 @@ for i=1,16 do
 end
 cleanInventory()
 
-step = 1
-while mode ~= 0 do
-    print("Step:", step, " Fuel: ", turtle.getFuelLevel())
-    step = step + 1
-    if mode == 1 then
-        print("Resource searching mode")
-        goForward()
-    elseif mode == 2 then
-        print("Resource mining mode")        
-        mine()
-    elseif mode == 3 then
-        print("Return to start position")
-        goBack()
-    end
-    --os.sleep(1)
-end
-
-turtleSetDirection(0)
+repeat
+    mainLoop()
+    if not charging() then break end
+until hasChargerInBase

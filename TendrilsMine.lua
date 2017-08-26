@@ -1,8 +1,10 @@
---TODO inventory array, multiple materials, split project into modules
+--TODO inventory array, multiple materials
+--TODO split project into modules (Cords+, Space-, Queue-)
 --TODO add knowns materials
 --TODO move turtle position from space into state
 --TODO replace hard return on inv and fuel
 --TODO replace goToBasePoint() on goToTarget()
+-- BFS algortim has problem to find path from startPoint to behind base point - overflow
 
 --global variable
 
@@ -16,33 +18,40 @@ posName = "turtleState"
 dbgName = "turtleDebug"
 maxNumOfReturns = 1
 
---control
-modeEnum = {
-    stop = 0,
-    search = 1,
-    mine = 2,
-    goBak = 3
-}
+
 
 --save all prints into file and print them
 function initDbg()
     oldPrint = print
     dbg = fs.open(dbgName, "w")
     print = function(...) 
-        for i, a in ipairs(arg) do
-            if a == nil then dbg.write("nil\t")
-            else dbg.write(tostring(a) .. "\t") end
+        for i, v in ipairs(arg) do
+            if v == nil then dbg.write("nil\t")
+            else dbg.write(tostring(v) .. "\t") end
         end
         dbg.write("\n")
         dbg.flush()
-        for i, a in ipairs(arg) do oldprint(tostring(a) .. "\t") end
+        for i, v in ipairs(arg) do oldPrint(v) end
     end
 end
-
 initDbg()
 
+
+--DEBUG TEST
+print("Loading Cords:", os.loadAPI("Cords"))
+Cords = Cords.Cords
+
+
+--control
+modeEnum = {
+    stop = 0,
+    search = 1,
+    mine = 2,
+    goBack = 3
+}
+
 state={}
-local function reset()    
+local function reset()
     state.numMaterials=0
     state.mode = modeEnum.search
     state.freeSpaceInSlot = 0
@@ -60,75 +69,6 @@ local function reset()
 end
 
 reset()
-
-
-
---Cords -> 3 numbers represent relative location to begining position
-Cords = {}
-function Cords.new(a, b, c)
-	a = a or 0
-	b = b or 0
-	c = c or 0
-    return {x=a, y=b, z=c}
-end
-
-function Cords.equals(cordA, cordB)
-    if cordA == nil or cordB == nil then return false end
-    return cordA.x == cordB.x and cordA.y == cordB.y and cordA.z == cordB.z
-end
-
-function Cords.add(cords, xx, yy, zz)
-    if yy == nil and zz == nil then zz = xx.z; yy = xx.y; xx = xx.x end
-    return Cords.new(cords.x + xx, cords.y + yy, cords.z + zz)
-end
-
-function Cords.sub(beginCords, endCords)
-    return Cords.new(endCords.x-beginCords.x, endCords.y-beginCords.y, endCords.z-beginCords.z)
-end
-
-function Cords.distance(beginCords, endCords)
-    local diff = Cords.sub(beginCords, endCords)
-    return math.abs(diff.x) + math.abs(diff.y) + math.abs(diff.z)
-end
-
-function Cords.length(cords)
-    local sqrtsSum = cords.x * cords.x + cords.y * cords.y + cords.z * cords.z
-    return math.sqrt(sqrtsSum)
-end
-
-function Cords.div(cords, scalar)
-    return Cords.new(cords.x / scalar, cords.y / scalar, cords.z / scalar)
-end
-
-function Cords.mul(cords, scalar)
-    return Cords.new(cords.x * scalar, cords.y * scalar, cords.z * scalar)
-end
-
-function Cords.round(cords)
-    return Cords.new(math.floor(cords.x), math.floor(cords.y), math.floor(cords.z))
-end
-
-function Cords.tostring(cords)
-    return "[x:"..cords.x.." y:"..cords.y.." z:"..cords.z.."]"
-end
-
-function Cords.isZero(cords)
-    if cords.x == 0 and cords.y == 0 and cords.z == 0 then return true
-    else return false end
-end
-
-function Cords.getPosAhead(cords)
-    local d = state.turtleDirection
-    if d == 0 then
-        return Cords.add(cords, 1, 0, 0)
-    elseif d == 1 then
-        return Cords.add(cords, 0, 1, 0)
-    elseif d == 2 then
-        return Cords.add(cords, -1, 0, 0)
-    else
-        return Cords.add(cords, 0, -1, 0)
-    end
-end
 
 
 
@@ -164,7 +104,7 @@ function Space.new ()
     dim[0] = {}
     dim[0][0] = {}
     dim[0][0][0] = "turtleHome"
-    return {dim = dim, pos=Cords.new()} 
+    return {dim=dim, pos=Cords.new()} 
 end
 
 function Space.getMaterial(space, cords)
@@ -212,7 +152,7 @@ end
 
 function Space.findNearestMaterial(space, searchMaterial)
     local QueueData = {}
-    function QueueData.new(fdir, axis, dir, cords) 
+    function QueueData.new(fdir, axis, dir, cords)
         return {firstDirection=fdir, 
                 axis=axis, 
                 direction=dir, 
@@ -222,18 +162,18 @@ function Space.findNearestMaterial(space, searchMaterial)
         return "[firstDir:"..(queuedata.firstDirection or 0)
                .." axis:"..queuedata.axis 
                .." direction:"..queuedata.direction
-               .." position:"..Cords.tostring(queuedata.position).."]"
+               .." position:"..tostring(queuedata.position).."]"
     end
 
     local cord = space.pos 
     local q = Queue.new()
 
-    Queue.push(q, QueueData.new("x+", "x",  1, Cords.add(cord,  1, 0, 0)))
-    Queue.push(q, QueueData.new("x-", "x", -1, Cords.add(cord, -1, 0, 0)))
-    Queue.push(q, QueueData.new("y+", "y",  1, Cords.add(cord, 0,  1, 0)))
-    Queue.push(q, QueueData.new("y-", "y", -1, Cords.add(cord, 0, -1, 0)))
-    Queue.push(q, QueueData.new("z+", "z",  1, Cords.add(cord, 0, 0,  1)))
-    Queue.push(q, QueueData.new("z-", "z", -1, Cords.add(cord, 0, 0, -1)))
+    Queue.push(q, QueueData.new("x+", "x",  1, cord + Cords(1, 0, 0)))
+    Queue.push(q, QueueData.new("x-", "x", -1, cord + Cords(-1,0, 0)))
+    Queue.push(q, QueueData.new("y+", "y",  1, cord + Cords(0, 1, 0)))
+    Queue.push(q, QueueData.new("y-", "y", -1, cord + Cords(0,-1, 0)))
+    Queue.push(q, QueueData.new("z+", "z",  1, cord + Cords(0, 0, 1)))
+    Queue.push(q, QueueData.new("z-", "z", -1, cord + Cords(0, 0,-1)))
 
     while true do
         local data = Queue.pop(q)
@@ -247,27 +187,27 @@ function Space.findNearestMaterial(space, searchMaterial)
 		elseif mat ~= "secured" then
 
 			if axis == "x" then
-				Queue.push(q, QueueData.new(fdir, "x", dir, Cords.add(position, dir, 0, 0)))
-				Queue.push(q, QueueData.new(fdir, "y", 1,   Cords.add(position, 0, 1, 0)))
-				Queue.push(q, QueueData.new(fdir, "y", -1,  Cords.add(position, 0, -1, 0)))
+				Queue.push(q, QueueData.new(fdir, "x", dir, position + Cords(dir, 0, 0)))
+				Queue.push(q, QueueData.new(fdir, "y", 1,   position + Cords(0, 1, 0)))
+				Queue.push(q, QueueData.new(fdir, "y", -1,  position + Cords(0, -1, 0)))
 			elseif axis == "y" then
-				Queue.push(q, QueueData.new(fdir, "y", dir, Cords.add(position, 0, dir, 0)))
+				Queue.push(q, QueueData.new(fdir, "y", dir, position + Cords(0, dir, 0)))
 			end
 
 			if axis == "x" or axis == "y" then
-				Queue.push(q, QueueData.new(fdir, "z", 1,   Cords.add(position, 0, 0, 1)))
-				Queue.push(q, QueueData.new(fdir, "z", -1,  Cords.add(position, 0, 0, -1)))
+				Queue.push(q, QueueData.new(fdir, "z", 1,   position + Cords(0, 0, 1)))
+				Queue.push(q, QueueData.new(fdir, "z", -1,  position + Cords(0, 0, -1)))
 			else
-				Queue.push(q, QueueData.new(fdir, "z", dir, Cords.add(position, 0, 0, dir)))
+				Queue.push(q, QueueData.new(fdir, "z", dir, position + Cords(0, 0, dir)))
 			end
 		end
     end
 end
 
 function Space.changePos(space, direction)
-    if direction == "up" then space.pos = Cords.add(space.pos, 0, 0, 1)
-    elseif direction == "down" then space.pos = Cords.add(space.pos, 0, 0, -1)
-    else space.pos = Cords.getPosAhead(space.pos) end
+    if direction == "up" then space.pos = space.pos + Cords(0, 0, 1)
+    elseif direction == "down" then space.pos = space.pos + Cords(0, 0, -1)
+    else space.pos = space.pos:getPosAhead(state.turtleDirection) end
 end
 
 
@@ -393,16 +333,19 @@ end
 dirFun = {} -- 1=detect, 2=cords modif, 3=arg for cords modif, 4=dig, 5=move, 6=inspect
 dirFun["normal"] = {turtle.detect, Cords.getPosAhead, 0, turtle.dig, 
                     turtle.forward, turtle.inspect}
-dirFun["up"]     = {turtle.detectUp, Cords.add, 1, turtle.digUp,
+dirFun["up"]     = {turtle.detectUp, Cords.__add, 1, turtle.digUp,
                     turtle.up, turtle.inspectUp}
-dirFun["down"]   = {turtle.detectDown, Cords.add, -1, turtle.digDown, 
+dirFun["down"]   = {turtle.detectDown, Cords.__add, -1, turtle.digDown, 
                     turtle.down, turtle.inspectDown}
+
 
 function checkTerrain(dir, onSuccesValue)
     if dirFun[dir][1]() then
         local succes, data = dirFun[dir][6]()
         if succes and data.name == material then
-            local cords = dirFun[dir][2](space.pos, 0, 0, dirFun[dir][3])
+            local cords
+            if dir == "normal" then cords = space.pos:getPosAhead(state.direction)
+            else cords = space.pos + Cords(0, 0, dirFun[dir][3]) end
             if isInSecureRange(cords) then return false end
             Space.update(space, cords, onSuccesValue)
             return true
@@ -438,7 +381,7 @@ function turtleMove(dir)
         state.mode = modeEnum.goBack
     end
 
-    if Cords.equals(space.pos, checkPoint.current) then
+    if space.pos == checkPoint.current then
         checkPoint.current = nil 
     end
     
@@ -487,20 +430,21 @@ function goToTarget(targetCords)
     if isInSecureRange(space.pos, 1) then
         local nearestPoint = findNearestPoint(space.pos, targetCords)
 
-        print("You are in secure zone:".. Cords.tostring(space.pos)) --INFO
-        print("You want to go to:".. Cords.tostring(targetCords).. 
-              " but you go to:".. Cords.tostring(nearestPoint)) --INFO
+
+        print("You are in secure zone:".. Cords.__tostring(space.pos)) --INFO
+        print("You want to go to:".. Cords.__tostring(targetCords)
+              .." but you go to:".. Cords.__tostring(nearestPoint)) --INFO
 
         local saved = Space.getMaterial(space, nearestPoint)
         Space.update(space, nearestPoint, "nearest")
         targetCords = Space.findNearestMaterial(space, "nearest")
         Space.update(space, nearestPoint, saved)
 
-        targetCords = Cords.add(space.pos, decode(targetCords))
-        print("Nearest point is:".. Cords.tostring(targetCords)) --INFO
+        targetCords = space.pos + decode(targetCords)
+        print("Nearest point is:", targetCords) --INFO
     end
 
-    local distance = Cords.sub(space.pos, targetCords)
+    local distance = targetCords - space.pos
 
     if distance.x ~= 0 then
         if distance.x < 0 then turtleSetDirection(2) else turtleSetDirection(0) end        
@@ -520,23 +464,26 @@ function goToTarget(targetCords)
 end
 
 function findNearestPoint(from, to)
-    print("findNearestPoint")
-    local delta = Cords.sub(from, to)
+    local delta = to - from
     local length = Cords.length(delta)
-    local dif = Cords.div(delta, length)
-    
+    local dif = delta / length
     local i, dest = 1, from
     repeat
-        dest = Cords.round(Cords.add(from, Cords.mul(dif, i)))
+        dest = dif * i 
+        dest = dest + from
+        dest = dest:round()
         i = i + 1
-    until Space.getMaterial(space, dest) ~= "secured" and not Cords.equals(dest, space.pos)
+    os.sleep(2)
+    local war = dest == space.pos
+    until Space.getMaterial(space, dest) ~= "secured" and not war
     return dest
 end
 
 
 
 --help quick check functions
-function isOnInputPoint(x, y, z) return x == baseRadius and y == 0 and z == 0 end
+function isOnInputPoint(x, y, z)
+ return x == baseRadius and y == 0 and z == 0 end
 
 function isOnLayer(layer, x, c)
     return math.abs(layer) == baseRadius 
@@ -583,7 +530,7 @@ function genCheckPoint()
         end
         local x = genCordX(checkPoint.num, checkPoint.round)
         local y = genCordY(checkPoint.num, checkPoint.round)
-        checkPoint.current = Cords.new(x * 3, y * 3)
+        checkPoint.current = Cords(x * 3, y * 3)
         checkPoint.num = checkPoint.num + 1
     end
 
@@ -599,9 +546,9 @@ function decode(code)
     local sign = nil
     if string.sub(code, 2, 2) == "+" then sign = 1 else sign = -1 end
 
-    if char == "x" then return Cords.new(sign, 0, 0)
-    elseif char == "y" then return Cords.new(0, sign, 0)
-    else return Cords.new(0, 0, sign) end
+    if char == "x" then return Cords(sign, 0, 0)
+    elseif char == "y" then return Cords(0, sign, 0)
+    else return Cords(0, 0, sign) end
 end
 
 
@@ -612,12 +559,12 @@ function goToBasePoint()
     local cords = space.pos
     local x, y, z = cords.x, cords.y, cords.z
     if isInSecureRange(cords) or isOnInputPoint(x,y,z) then goToTarget(Cords.new())
-    elseif isOnLayer(y,x,z) or isOnLayer(z,x,y) then goToTarget(Cords.add(space.pos, 1, 0, 0))
-    elseif isAboveInput(x, y, z) then goToTarget(Cords.add(space.pos, 0, 0, -1))
-    elseif isUnderInput(x, y, z) then goToTarget(Cords.add(space.pos, 0, 0, 1))
-    elseif isOnBack(x, y, z) then goToTarget(Cords.add(Cords.new(), -baseRadius, baseRadius, 0))
-    elseif isOnForward(x, y, z) then goToTarget(Cords.add(Cords.new(), baseRadius, 0, 0))
-    else goToTarget(Cords.add(Cords.new(), baseRadius, 0, 0))
+    elseif isOnLayer(y,x,z) or isOnLayer(z,x,y) then goToTarget(space.pos + Cords(1, 0, 0))
+    elseif isAboveInput(x, y, z) then goToTarget(space.pos + Cords(0, 0, -1))
+    elseif isUnderInput(x, y, z) then goToTarget(space.pos + Cords(0, 0, 1))
+    elseif isOnBack(x, y, z) then goToTarget(Cords(-baseRadius, baseRadius, 0))
+    elseif isOnForward(x, y, z) then goToTarget(Cords(baseRadius, 0, 0))
+    else goToTarget(Cords(baseRadius, 0, 0))
     end
 end
 
@@ -641,7 +588,7 @@ end
 function goBack()
     if state.numMaterials > 0 and not state.hardReturn then
         state.mode = modeEnum.mine
-    elseif Cords.isZero(space.pos) then
+    elseif space.pos:isZero() then
         state.mode = modeEnum.stop
     else 
         goToBasePoint()
@@ -686,10 +633,8 @@ function mainLoop()
     reset()
 	step = 0
     while state.mode ~= modeEnum.stop do
-        print("Returns:".. numOfReturns
-              .." Step:".. step
-              .." Fuel: ".. turtle.getFuelLevel()
-              .. " Cords:".. Cords.tostring(space.pos))
+        print("Returns:"..numOfReturns.." Step:"..step
+              .." Fuel:"..turtle.getFuelLevel().." Cords:"..Cords.__tostring(space.pos))
         step = step + 1
 
         if state.mode == modeEnum.search then
@@ -725,7 +670,7 @@ end
 
 --at start inventory check
 function initInventory()
-    local function count(i) 
+    local function count(i)
         state.collectedResources = state.collectedResources + turtle.getItemCount(i)
     end
     cleanInventory() --clean to count only resources

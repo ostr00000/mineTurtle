@@ -1,29 +1,28 @@
 --TODO inventory array, multiple materials
---TODO split project into modules (Cords+, Space-, Queue-)
 --TODO add knowns materials
---TODO move turtle position from space into state
 --TODO replace hard return on inv and fuel
---TODO replace goToBasePoint() on goToTarget()
+--+TODO replace goToBasePoint() on goToTarget()
 -- BFS algortim has problem to find path from startPoint to behind base point - overflow
 
 --global variable
 
 --to config
-material = "minecraft:quartz_ore"
-inventoryMaterial = "minecraft:quartz"
-baseRadius = 3
-hasChargerInBase = true
-mapName = "turtleWorld"
-posName = "turtleState"
-dbgName = "turtleDebug"
-maxNumOfReturns = 1
+Config = {}
+Config.material = "minecraft:quartz_ore"
+Config.inventoryMaterial = "minecraft:quartz"
+Config.baseRadius = 4
+Config.hasChargerInBase = false
+Config.mapName = "turtleWorld"
+Config.staName = "turtleState"
+Config.dbgName = "turtleDebug"
+Config.maxNumOfReturns = 1
 
 
 
 --save all prints into file and print them
 function initDbg()
     oldPrint = print
-    dbg = fs.open(dbgName, "w")
+    dbg = fs.open(Config.dbgName, "w")
     print = function(...) 
         for i, v in ipairs(arg) do
             if v == nil then dbg.write("nil\t")
@@ -38,9 +37,16 @@ initDbg()
 
 
 --DEBUG TEST
-print("Loading Cords:", os.loadAPI("Cords"))
-Cords = Cords.Cords
+local function loadAPI(name)
+	fs.delete(name)
+	fs.copy(name..".lua", name)
+	print("Loading "..name, os.loadAPI(name))
+	_G[name] = _G[name][name]
+end
 
+loadAPI("Cords")
+loadAPI("Heap")
+loadAPI("Space")
 
 --control
 modeEnum = {
@@ -50,7 +56,7 @@ modeEnum = {
     goBack = 3
 }
 
-state={}
+state = {config=Config}
 local function reset()
     state.numMaterials=0
     state.mode = modeEnum.search
@@ -69,147 +75,6 @@ local function reset()
 end
 
 reset()
-
-
-
---queue has been used to BFS algoritm
-Queue = {}
-function Queue.new()
-    return {first=0, last=-1}
-end
-
-function Queue.isEmpty(queue)
-    if queue.first > queue.last then return true
-    else return false end
-end
-
-function Queue.push(queue, val)
-    queue.last = queue.last + 1
-    queue[queue.last] = val
-end
-
-function Queue.pop(queue)
-    local val = queue[queue.first]
-    queue[queue.first] = nil
-    queue.first = queue.first + 1
-    return val
-end
-
-
-
--- Space represent searched block position and turrtle current position
-Space = {}
-function Space.new ()
-    local dim = {}
-    dim[0] = {}
-    dim[0][0] = {}
-    dim[0][0][0] = "turtleHome"
-    return {dim=dim, pos=Cords.new()} 
-end
-
-function Space.getMaterial(space, cords)
-    if space.dim[cords.x] ~= nil and space.dim[cords.x][cords.y] ~= nil then
-		return space.dim[cords.x][cords.y][cords.z]
-	else return nil end
-end
-
-function Space.hasChecked(space, cords)
-    return Space.getMaterial(space, cords) == "checked"
-end
-
--- knownMaterials = { material , "void" , "checked" , "secured" , "nearest" }
-function Space.update(space, cords, val)
-    local x, y, z = cords.x, cords.y, cords.z
-    local dim = space.dim
-
-    if dim[x] == nil then dim[x] = {} end
-    if dim[x][y] == nil then dim[x][y] = {} end
-
-    if val == material then 
-        if dim[x][y][z] ~= val then --first time apperar
-            state.numMaterials = state.numMaterials + 1 
-        end
-    elseif val == "void" then --material will be mined
-        state.numMaterials = state.numMaterials - 1
-        state.collectedResources = state.collectedResources + 1
-    elseif val ~= "checked" and val ~= "secured" and val ~= "nearest" and val ~= nil then 
-        print("ERROR: unknown material") 
-    end
-    dim[x][y][z] = val
-end
-
-function Space.initBase(space)
-	local length = baseRadius - 1
-	for i = -length, length do
-		for j = -length, length do
-			for k = -length, length do
-				Space.update(space, Cords.new(i, j, k), "secured")
-			end
-		end
-	end
-	for i = 0, length do Space.update(space, Cords.new(i, 0, 0), "checked") end
-end
-
-function Space.findNearestMaterial(space, searchMaterial)
-    local QueueData = {}
-    function QueueData.new(fdir, axis, dir, cords)
-        return {firstDirection=fdir, 
-                axis=axis, 
-                direction=dir, 
-                position=cords} 
-    end
-    function QueueData.tostring(queuedata)
-        return "[firstDir:"..(queuedata.firstDirection or 0)
-               .." axis:"..queuedata.axis 
-               .." direction:"..queuedata.direction
-               .." position:"..tostring(queuedata.position).."]"
-    end
-
-    local cord = space.pos 
-    local q = Queue.new()
-
-    Queue.push(q, QueueData.new("x+", "x",  1, cord + Cords(1, 0, 0)))
-    Queue.push(q, QueueData.new("x-", "x", -1, cord + Cords(-1,0, 0)))
-    Queue.push(q, QueueData.new("y+", "y",  1, cord + Cords(0, 1, 0)))
-    Queue.push(q, QueueData.new("y-", "y", -1, cord + Cords(0,-1, 0)))
-    Queue.push(q, QueueData.new("z+", "z",  1, cord + Cords(0, 0, 1)))
-    Queue.push(q, QueueData.new("z-", "z", -1, cord + Cords(0, 0,-1)))
-
-    while true do
-        local data = Queue.pop(q)
-        local axis, dir = data.axis, data.direction
-        local position, fdir = data.position, data.firstDirection
-        local mat = Space.getMaterial(space, position)
-
-        if mat == searchMaterial then
-            if searchMaterial == "nearest" then return data.firstDirection end
-            return position
-		elseif mat ~= "secured" then
-
-			if axis == "x" then
-				Queue.push(q, QueueData.new(fdir, "x", dir, position + Cords(dir, 0, 0)))
-				Queue.push(q, QueueData.new(fdir, "y", 1,   position + Cords(0, 1, 0)))
-				Queue.push(q, QueueData.new(fdir, "y", -1,  position + Cords(0, -1, 0)))
-			elseif axis == "y" then
-				Queue.push(q, QueueData.new(fdir, "y", dir, position + Cords(0, dir, 0)))
-			end
-
-			if axis == "x" or axis == "y" then
-				Queue.push(q, QueueData.new(fdir, "z", 1,   position + Cords(0, 0, 1)))
-				Queue.push(q, QueueData.new(fdir, "z", -1,  position + Cords(0, 0, -1)))
-			else
-				Queue.push(q, QueueData.new(fdir, "z", dir, position + Cords(0, 0, dir)))
-			end
-		end
-    end
-end
-
-function Space.changePos(space, direction)
-    if direction == "up" then space.pos = space.pos + Cords(0, 0, 1)
-    elseif direction == "down" then space.pos = space.pos + Cords(0, 0, -1)
-    else space.pos = space.pos:getPosAhead(state.turtleDirection) end
-end
-
 
 
 checkPoint = {}
@@ -234,34 +99,34 @@ function saveFile(filename, struct)
     file.close()
 end
 
-if fs.exists(mapName) then -- works only in root dir
-	space.dim = loadFile(mapName) 
-else
-	Space.initBase(space)
-end 
-if fs.exists(posName) then
-    local data = loadFile(posName)
-
-    space.pos = data.pos
+if fs.exists(Config.staName) then
+    local data = loadFile(Config.staName)
     checkPoint = data.checkPoint
-    state=data.state
+    state = data.state
+    state.pos = Cords.new(data.state.pos)
+else 
+    state.pos = Cords.new()
 end
-
+if fs.exists(Config.mapName) then -- works only in root dir
+    space.dim = loadFile(Config.mapName) 
+else
+    Space.initBase(space, Config.baseRadius, state)
+end 
 
 
 --turtle status functions
 function isInSecureRange(cords, additionalRadious)
     local x, y, z = cords.x, cords.y, cords.z
-    local radius = baseRadius + (additionalRadious or 0)
+    local radius = Config.baseRadius + (additionalRadious or 0)
     return math.abs(x) < radius and math.abs(y) < radius and math.abs(z) < radius 
 end
 
 function isEnoughFuel()
     local fuel = turtle.getFuelLevel()
     if fuel == "unlimited" then return true end
-    local distance = Cords.distance(space.pos, Cords.new())
+    local distance = Cords.distance(state.pos, Cords.new())
     turtle.select(16)
-    while fuel <= distance + 1 + 6 * (baseRadius - 1) do
+    while fuel <= distance + 1 + 6 * (Config.baseRadius - 1) do
         if turtle.refuel(0) then 
             turtle.refuel(1)
             fuel = turtle.getFuelLevel()
@@ -284,7 +149,7 @@ function replaceResources()
             local condition = (i ~= 16) -- and if slots is not fuel slot
             if not condition then -- or on fuel slot is resource
                 local data = turtle.getItemDetail(16)
-                if data and data.name == inventoryMaterial then condition = true end
+                if data and data.name == Config.inventoryMaterial then condition = true end
             end
             if condition then
                 turtle.select(i)
@@ -307,14 +172,14 @@ end
 function cleanInventory()
     for i=1,15 do
         local data = turtle.getItemDetail(i)
-        if data and data.name ~= inventoryMaterial then
+        if data and data.name ~= Config.inventoryMaterial then
             turtle.select(i)
             turtle.drop()
         end
     end
     turtle.select(16)
     local data = turtle.getItemDetail(16)
-    if data and data.name ~= inventoryMaterial and not turtle.refuel(0) then turtle.drop() end
+    if data and data.name ~= Config.inventoryMaterial and not turtle.refuel(0) then turtle.drop() end
     if state.collectedResources > 15 then replaceResources() end 
 end
 
@@ -342,12 +207,12 @@ dirFun["down"]   = {turtle.detectDown, Cords.__add, -1, turtle.digDown,
 function checkTerrain(dir, onSuccesValue)
     if dirFun[dir][1]() then
         local succes, data = dirFun[dir][6]()
-        if succes and data.name == material then
+        if succes and data.name == Config.material then
             local cords
-            if dir == "normal" then cords = space.pos:getPosAhead(state.direction)
-            else cords = space.pos + Cords(0, 0, dirFun[dir][3]) end
+            if dir == "normal" then cords = state.pos:getPosAhead(state.turtleDirection)
+            else cords = state.pos + Cords(0, 0, dirFun[dir][3]) end
             if isInSecureRange(cords) then return false end
-            Space.update(space, cords, onSuccesValue)
+            Space.update(space, cords, onSuccesValue, state)
             return true
         end
     end
@@ -370,7 +235,7 @@ function turtleMove(dir)
             end
         end
     until isSuccess 
-    Space.changePos(space, dir)
+    Space.changePos(state, dir)
 
     if not state.allSlotsEquipment then cleanInventory() end
     local fuel, inventory = isEnoughFuel(), isEnoughSpace()
@@ -381,16 +246,16 @@ function turtleMove(dir)
         state.mode = modeEnum.goBack
     end
 
-    if space.pos == checkPoint.current then
+    if state.pos == checkPoint.current then
         checkPoint.current = nil 
+		turtle.digDown()
     end
     
     local toSave = {
-        pos=space.pos,
         checkPoint=checkPoint,
         state=state
     }
-    saveFile(posName, toSave)
+    saveFile(Config.staName, toSave)
 end
 
 function turtleTurn(right)
@@ -414,37 +279,39 @@ function turtleSetDirection(direction)
 end
 
 function lookAround()
-    if Space.hasChecked(space, space.pos) then return false
-    else Space.update(space, space.pos, "checked") end
+    if Space.hasChecked(space, state.pos) then return false
+    else Space.update(space, state.pos, "checked", state) end
     
     local finded = false
     for _=1,4 do
-        finded = finded or checkTerrain("normal", material)
+        finded = checkTerrain("normal", Config.material) or finded
         turtleTurn()
     end
-    finded = finded or checkTerrain("up", material)
-    return finded or checkTerrain("down", material)
+    finded = checkTerrain("up", Config.material) or finded
+    return checkTerrain("down", Config.material) or finded
 end
 
 function goToTarget(targetCords)
-    if isInSecureRange(space.pos, 1) then
-        local nearestPoint = findNearestPoint(space.pos, targetCords)
-
-
-        print("You are in secure zone:".. Cords.__tostring(space.pos)) --INFO
-        print("You want to go to:".. Cords.__tostring(targetCords)
-              .." but you go to:".. Cords.__tostring(nearestPoint)) --INFO
+    if isInSecureRange(state.pos, 1) then
+    		local testType = function(obj, typ) return getmetatable(obj) == typ end
+    		assert(testType(state.pos, Cords), "ASSERT: goToTarget: not Cords: state.pos")
+    		assert(testType(targetCords, Cords), "ASSERT: goToTarget: not Cords: targetCords")
+    		local nearestPoint = findNearestPoint(state.pos, targetCords)
+		
+        print("You are in secure zone:"..tostring(state.pos)) --INFO
+        print("You want to go to:"..tostring(targetCords)
+              .." but you go to:"..tostring(nearestPoint)) --INFO
 
         local saved = Space.getMaterial(space, nearestPoint)
-        Space.update(space, nearestPoint, "nearest")
-        targetCords = Space.findNearestMaterial(space, "nearest")
-        Space.update(space, nearestPoint, saved)
+        Space.update(space, nearestPoint, "nearest", state)
+        targetCords = Space.findNearestMaterial(space, state.pos, "nearest")
+        Space.update(space, nearestPoint, saved, state)
 
-        targetCords = space.pos + decode(targetCords)
+        targetCords = state.pos + decode(targetCords)
         print("Nearest point is:", targetCords) --INFO
     end
 
-    local distance = targetCords - space.pos
+    local distance = targetCords - state.pos
 
     if distance.x ~= 0 then
         if distance.x < 0 then turtleSetDirection(2) else turtleSetDirection(0) end        
@@ -469,13 +336,9 @@ function findNearestPoint(from, to)
     local dif = delta / length
     local i, dest = 1, from
     repeat
-        dest = dif * i 
-        dest = dest + from
-        dest = dest:round()
+        dest = (dif * i + from):round()
         i = i + 1
-    os.sleep(2)
-    local war = dest == space.pos
-    until Space.getMaterial(space, dest) ~= "secured" and not war
+    until Space.getMaterial(space, dest) ~= "secured" and dest ~= state.pos
     return dest
 end
 
@@ -483,21 +346,21 @@ end
 
 --help quick check functions
 function isOnInputPoint(x, y, z)
- return x == baseRadius and y == 0 and z == 0 end
+ return x == Config.baseRadius and y == 0 and z == 0 end
 
 function isOnLayer(layer, x, c)
-    return math.abs(layer) == baseRadius 
-        and (math.abs(x) < baseRadius or x == -baseRadius)
-        and math.abs(c) <= baseRadius
+    return math.abs(layer) == Config.baseRadius 
+        and (math.abs(x) < Config.baseRadius or x == -Config.baseRadius)
+        and math.abs(c) <= Config.baseRadius
 end
 
-function isOnBack(x, y, z) return x == -baseRadius end
+function isOnBack(x, y, z) return x == -Config.baseRadius end
 
 function isAboveInput(x, y, z) return z > 0 end
 
 function isUnderInput(x, y, z) return z < 0 end
 
-function isOnForward(x, y, z) return x == baseRadius end
+function isOnForward(x, y, z) return x == Config.baseRadius end
 
 function isBetween(a, x, b) return a <= x and x <= b end
 
@@ -556,15 +419,15 @@ end
 --main functions
 
 function goToBasePoint()
-    local cords = space.pos
+    local cords = state.pos
     local x, y, z = cords.x, cords.y, cords.z
     if isInSecureRange(cords) or isOnInputPoint(x,y,z) then goToTarget(Cords.new())
-    elseif isOnLayer(y,x,z) or isOnLayer(z,x,y) then goToTarget(space.pos + Cords(1, 0, 0))
-    elseif isAboveInput(x, y, z) then goToTarget(space.pos + Cords(0, 0, -1))
-    elseif isUnderInput(x, y, z) then goToTarget(space.pos + Cords(0, 0, 1))
-    elseif isOnBack(x, y, z) then goToTarget(Cords(-baseRadius, baseRadius, 0))
-    elseif isOnForward(x, y, z) then goToTarget(Cords(baseRadius, 0, 0))
-    else goToTarget(Cords(baseRadius, 0, 0))
+    elseif isOnLayer(y,x,z) or isOnLayer(z,x,y) then goToTarget(state.pos + Cords(1, 0, 0))
+    elseif isAboveInput(x, y, z) then goToTarget(state.pos + Cords(0, 0, -1))
+    elseif isUnderInput(x, y, z) then goToTarget(state.pos + Cords(0, 0, 1))
+    elseif isOnBack(x, y, z) then goToTarget(Cords(-Config.baseRadius, Config.baseRadius, 0))
+    elseif isOnForward(x, y, z) then goToTarget(Cords(Config.baseRadius, 0, 0))
+    else goToTarget(Cords(Config.baseRadius, 0, 0))
     end
 end
 
@@ -572,14 +435,14 @@ function goSearch()
     if lookAround() or state.numMaterials > 0 then 
         state.mode = modeEnum.mine
     else
-        if not checkPoint.current then genCheckPoint() end        
-        goToTarget(checkPoint.current) 
+        if not checkPoint.current then genCheckPoint() end
+        goToTarget(checkPoint.current)
     end
 end
 
 function mine()
     if state.numMaterials > 0 then
-        goToTarget(Space.findNearestMaterial(space, material))
+        goToTarget(Space.findNearestMaterial(space, state.pos, Config.material))
     else
         state.mode = modeEnum.search
     end
@@ -588,10 +451,12 @@ end
 function goBack()
     if state.numMaterials > 0 and not state.hardReturn then
         state.mode = modeEnum.mine
-    elseif space.pos:isZero() then
+    elseif state.pos:isZero() then
         state.mode = modeEnum.stop
-    else 
-        goToBasePoint()
+    elseif state.pos == Cords(Config.baseRadius, 0, 0) or isInSecureRange(state.pos) then
+        goToTarget(Cords())
+    else
+        goToTarget(Cords(Config.baseRadius, 0, 0))
     end
 end
 
@@ -617,7 +482,7 @@ function leaveItems()
 
     local start = 15
     local data = turtle.getItemDetail(16)
-    if data and data.name == inventoryMaterial then start = 16 end
+    if data and data.name == Config.inventoryMaterial then start = 16 end
     for i=start,1,-1 do
         turtle.select(i)
         while not turtle.dropDown() and turtle.getItemCount(i) ~= 0 do
@@ -627,14 +492,14 @@ function leaveItems()
     end
 end
 
-terminateFlag = not hasChargerInBase
+terminateFlag = not Config.hasChargerInBase
 numOfReturns = 0
 function mainLoop()
     reset()
 	step = 0
     while state.mode ~= modeEnum.stop do
         print("Returns:"..numOfReturns.." Step:"..step
-              .." Fuel:"..turtle.getFuelLevel().." Cords:"..Cords.__tostring(space.pos))
+              .." Fuel:"..turtle.getFuelLevel().." Cords:"..Cords.__tostring(state.pos))
         step = step + 1
 
         if state.mode == modeEnum.search then
@@ -648,10 +513,10 @@ function mainLoop()
             goBack()
         end
 
-        saveFile(mapName, space.dim)
+        saveFile(Config.mapName, space.dim)
     end
     numOfReturns = numOfReturns + 1
-    if numOfReturns >= maxNumOfReturns then terminateFlag = true end
+    if numOfReturns >= Config.maxNumOfReturns then terminateFlag = true end
 end
 
 --at start fuel check
@@ -664,8 +529,12 @@ function initFuel()
             os.sleep(1)
         end
         if turtle.refuel(1) then print("Refuel success")
-        else print("Still no fuel"); return end
+        else 
+			print("Still no fuel")
+			return false
+		end
     end
+	return true
 end
 
 --at start inventory check
@@ -676,14 +545,14 @@ function initInventory()
     cleanInventory() --clean to count only resources
     for i=1,15 do count(i) end
     local data = turtle.getItemDetail(16)
-    if data and data.name == inventoryMaterial then count(16) end
+    if data and data.name == Config.inventoryMaterial then count(16) end
     if state.collectedResources > 15 then replaceResources() end 
 end
 
 
 
 --main program
-initFuel()
+if not initFuel() then return end
 initInventory()
 
 repeat

@@ -3,10 +3,14 @@
 Cords = {}
 Cords.__index = Cords
 
+local function unpack(packed) return packed.x, packed.y, packed.z end
+
 function Cords.new(a, b, c)
-	a = a or 0
-	b = b or 0
-	c = c or 0
+    if a~= nil and b == nil and c == nil then
+        a, b, c = unpack(a)
+    else
+        a, b, c = a or 0, b or 0, c or 0
+    end
     return setmetatable({x=a, y=b, z=c}, Cords)
 end
 
@@ -23,8 +27,8 @@ function Cords.__sub(cordA, cordB)
     return Cords.new(cordA.x - cordB.x, cordA.y - cordB.y, cordA.z - cordB.z)
 end
 
-function Cords.distance(cordA, cordB)
-    local diff = cordA - cordB
+function Cords:distance(cord)
+    local diff = self - cord
     return math.abs(diff.x) + math.abs(diff.y) + math.abs(diff.z)
 end
 
@@ -67,3 +71,4 @@ end
 
 setmetatable(Cords, {__call = function(_, ...) return Cords.new(...) end})
 
+return Cords

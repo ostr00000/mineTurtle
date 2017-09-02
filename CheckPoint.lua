@@ -1,4 +1,4 @@
---required modules Cords, Space
+--required modules Cords, Space, TurtleUtils
 --CheckPoints are points where turtle going to check if there are resources
 
 CheckPoint = {}
@@ -28,7 +28,7 @@ local function genCordY(c, n)
     else print("ERROR: wrong range Y c:".. c.. " n:".. n) end
 end
 
-function CheckPoint:genCheckPoint(space, Config)
+function CheckPoint:genCheckPoint(space, config)
     local coreFunction = function()
         if self.num == self.limit then
             self.round = self.round + 1 
@@ -44,7 +44,8 @@ function CheckPoint:genCheckPoint(space, Config)
     repeat
         self.current = nil
         coreFunction()
-    until not space.isInSecureRange(self.current, Config) 
+    until not TurtleUtils.isInSecureRange(self.current, config) 
           and not space:hasChecked(self.current)
 end
 
+return CheckPoint

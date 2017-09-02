@@ -1,4 +1,3 @@
---queue has been used to BFS algoritm
 
 Queue = {}
 Queue.__index = Queue

@@ -141,17 +141,5 @@ function Space:BFS(cord, stopCondition, targetPosition)
   		  end
     end
 end
--- TODO remove
-function Space.changePos(state, direction)
-    if direction == "up" then state.pos = state.pos + Cords(0, 0, 1)
-    elseif direction == "down" then state.pos = state.pos + Cords(0, 0, -1)
-    else state.pos = Cords.getPosAhead(state.pos, state.turtleDirection) end
-end
-
-function Space.isInSecureRange(cords, Config, additionalRadious)
-    local x, y, z = cords:unpack()
-    local radius = Config.baseRadius + (additionalRadious or 0)
-    return math.abs(x) < radius and math.abs(y) < radius and math.abs(z) < radius 
-end
 
 return Space

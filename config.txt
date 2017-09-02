@@ -1,0 +1,10 @@
+{
+  maxNumOfReturns = 1,
+  inventoryMaterial = "minecraft:quartz",
+  mapName = "turtleWorld",
+  hasChargerInBase = false,
+  debugerName = "turtleDebug",
+  material = "minecraft:quartz_ore",
+  stateName = "turtleState",
+  baseRadius = 10,
+}

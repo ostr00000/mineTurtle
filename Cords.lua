@@ -1,4 +1,4 @@
---Cords -> 3 numbers represent relative location to begining position
+--Cords -> 3 numbers represent relative location to begin position
 
 Cords = {}
 Cords.__index = Cords

@@ -1,8 +1,6 @@
 --TODO inventory array, multiple materials
 --TODO add knowns materials
 --TODO replace hard return on inv and fuel
---+TODO replace goToBasePoint() on goToTarget()
--- BFS algortim has problem to find path from startPoint to behind base point - overflow
 
 --global variable
 
@@ -10,7 +8,7 @@
 Config = {}
 Config.material = "minecraft:quartz_ore"
 Config.inventoryMaterial = "minecraft:quartz"
-Config.baseRadius = 4
+Config.baseRadius = 10
 Config.hasChargerInBase = false
 Config.mapName = "turtleWorld"
 Config.staName = "turtleState"
@@ -47,6 +45,7 @@ end
 loadAPI("Cords")
 loadAPI("Heap")
 loadAPI("Space")
+loadAPI("CheckPoint")
 
 --control
 modeEnum = {
@@ -77,12 +76,7 @@ end
 reset()
 
 
-checkPoint = {}
-checkPoint.current = nil
-checkPoint.round = 1
-checkPoint.limit = 8
-checkPoint.num = 0
-
+checkPoint = CheckPoint.create()
 space = Space.new()
 
 --file functions
@@ -101,32 +95,31 @@ end
 
 if fs.exists(Config.staName) then
     local data = loadFile(Config.staName)
-    checkPoint = data.checkPoint
+    checkPoint = setmetatable(data.checkPoint, CheckPoint)
+    
+    if checkPoint.current then
+        checkPoint.current = Cords.load(checkPoint.current)
+    end
     state = data.state
-    state.pos = Cords.new(data.state.pos)
-else 
+    state.pos = Cords.load(state.pos)
+else
     state.pos = Cords.new()
 end
 if fs.exists(Config.mapName) then -- works only in root dir
     space.dim = loadFile(Config.mapName) 
 else
-    Space.initBase(space, Config.baseRadius, state)
+    space:initBase(Config.baseRadius, state)
 end 
 
 
 --turtle status functions
-function isInSecureRange(cords, additionalRadious)
-    local x, y, z = cords.x, cords.y, cords.z
-    local radius = Config.baseRadius + (additionalRadious or 0)
-    return math.abs(x) < radius and math.abs(y) < radius and math.abs(z) < radius 
-end
 
 function isEnoughFuel()
     local fuel = turtle.getFuelLevel()
     if fuel == "unlimited" then return true end
     local distance = Cords.distance(state.pos, Cords.new())
     turtle.select(16)
-    while fuel <= distance + 1 + 6 * (Config.baseRadius - 1) do
+    while fuel <= distance + 1 + 5 * (Config.baseRadius - 1) do
         if turtle.refuel(0) then 
             turtle.refuel(1)
             fuel = turtle.getFuelLevel()
@@ -211,8 +204,8 @@ function checkTerrain(dir, onSuccesValue)
             local cords
             if dir == "normal" then cords = state.pos:getPosAhead(state.turtleDirection)
             else cords = state.pos + Cords(0, 0, dirFun[dir][3]) end
-            if isInSecureRange(cords) then return false end
-            Space.update(space, cords, onSuccesValue, state)
+            if Space.isInSecureRange(cords, Config) then return false end
+            space:update(cords, onSuccesValue, state)
             return true
         end
     end
@@ -279,8 +272,8 @@ function turtleSetDirection(direction)
 end
 
 function lookAround()
-    if Space.hasChecked(space, state.pos) then return false
-    else Space.update(space, state.pos, "checked", state) end
+    if space:hasChecked(state.pos) then return false
+    else space:update(state.pos, "checked", state) end
     
     local finded = false
     for _=1,4 do
@@ -292,23 +285,16 @@ function lookAround()
 end
 
 function goToTarget(targetCords)
-    if isInSecureRange(state.pos, 1) then
+    if Space.isInSecureRange(state.pos, Config, 1) then
     		local testType = function(obj, typ) return getmetatable(obj) == typ end
     		assert(testType(state.pos, Cords), "ASSERT: goToTarget: not Cords: state.pos")
     		assert(testType(targetCords, Cords), "ASSERT: goToTarget: not Cords: targetCords")
-    		local nearestPoint = findNearestPoint(state.pos, targetCords)
-		
-        print("You are in secure zone:"..tostring(state.pos)) --INFO
-        print("You want to go to:"..tostring(targetCords)
-              .." but you go to:"..tostring(nearestPoint)) --INFO
-
-        local saved = Space.getMaterial(space, nearestPoint)
-        Space.update(space, nearestPoint, "nearest", state)
-        targetCords = Space.findNearestMaterial(space, state.pos, "nearest")
-        Space.update(space, nearestPoint, saved, state)
-
-        targetCords = state.pos + decode(targetCords)
-        print("Nearest point is:", targetCords) --INFO
+    		
+    		print("You are in secure zone:", state.pos,
+              "You want to go to:", targetCords)--INFO
+    		
+	      targetCords = space:findNearestPosition(state.pos, targetCords)
+        print("But you go to:", targetCords) --INFO
     end
 
     local distance = targetCords - state.pos
@@ -324,125 +310,27 @@ function goToTarget(targetCords)
     elseif distance.z ~= 0 then
         if distance.z > 0 then turtleMove("up") else turtleMove("down") end
     else
-        print("ERROR: I need to go to filed where I am") 
+        print("ERROR: I need to go to field where I am") 
     end
     
     if not state.hardReturn then lookAround() end
 end
 
-function findNearestPoint(from, to)
-    local delta = to - from
-    local length = Cords.length(delta)
-    local dif = delta / length
-    local i, dest = 1, from
-    repeat
-        dest = (dif * i + from):round()
-        i = i + 1
-    until Space.getMaterial(space, dest) ~= "secured" and dest ~= state.pos
-    return dest
-end
-
-
-
---help quick check functions
-function isOnInputPoint(x, y, z)
- return x == Config.baseRadius and y == 0 and z == 0 end
-
-function isOnLayer(layer, x, c)
-    return math.abs(layer) == Config.baseRadius 
-        and (math.abs(x) < Config.baseRadius or x == -Config.baseRadius)
-        and math.abs(c) <= Config.baseRadius
-end
-
-function isOnBack(x, y, z) return x == -Config.baseRadius end
-
-function isAboveInput(x, y, z) return z > 0 end
-
-function isUnderInput(x, y, z) return z < 0 end
-
-function isOnForward(x, y, z) return x == Config.baseRadius end
-
-function isBetween(a, x, b) return a <= x and x <= b end
-
-
-
---checkPoints functions
-function genCordX(c, n)
-    if isBetween(0, c, n) or isBetween(7*n, c, 8*n-1) then return n
-    elseif isBetween(3*n, c, 5*n) then return -n
-    elseif isBetween(n+1, c, 3*n-1) then return 2*n-c
-    elseif isBetween(5*n+1, c, 7*n-1) then return c-6*n
-    else print("ERROR: wrong range X c:".. c .. " n:" .. n) end
-end
-
-function genCordY(c, n)
-    if isBetween(n, c, 3*n) then return n
-    elseif isBetween(5*n, c, 7*n) then return -n
-    elseif isBetween(3*n+1, c, 5*n+1) then return 4*n-c
-    elseif isBetween(0, c, n-1) then return c
-    elseif isBetween(7*n+1, c, 8*n-1) then return 7*n-c
-    else print("ERROR: wrong range Y c:".. c.. " n:".. n) end
-end
-
-function genCheckPoint()
-    local coreFunction = function()
-        if checkPoint.num == checkPoint.limit then
-            checkPoint.round = checkPoint.round + 1 
-            checkPoint.limit = checkPoint.limit + 8
-            checkPoint.num = 0
-        end
-        local x = genCordX(checkPoint.num, checkPoint.round)
-        local y = genCordY(checkPoint.num, checkPoint.round)
-        checkPoint.current = Cords(x * 3, y * 3)
-        checkPoint.num = checkPoint.num + 1
-    end
-
-    repeat
-        checkPoint.current = nil
-        coreFunction()
-    until not isInSecureRange(checkPoint.current) 
-          and not Space.hasChecked(space, checkPoint.current)
-end
-
-function decode(code)
-    local char = string.sub(code, 1, 1)
-    local sign = nil
-    if string.sub(code, 2, 2) == "+" then sign = 1 else sign = -1 end
-
-    if char == "x" then return Cords(sign, 0, 0)
-    elseif char == "y" then return Cords(0, sign, 0)
-    else return Cords(0, 0, sign) end
-end
-
-
 
 --main functions
-
-function goToBasePoint()
-    local cords = state.pos
-    local x, y, z = cords.x, cords.y, cords.z
-    if isInSecureRange(cords) or isOnInputPoint(x,y,z) then goToTarget(Cords.new())
-    elseif isOnLayer(y,x,z) or isOnLayer(z,x,y) then goToTarget(state.pos + Cords(1, 0, 0))
-    elseif isAboveInput(x, y, z) then goToTarget(state.pos + Cords(0, 0, -1))
-    elseif isUnderInput(x, y, z) then goToTarget(state.pos + Cords(0, 0, 1))
-    elseif isOnBack(x, y, z) then goToTarget(Cords(-Config.baseRadius, Config.baseRadius, 0))
-    elseif isOnForward(x, y, z) then goToTarget(Cords(Config.baseRadius, 0, 0))
-    else goToTarget(Cords(Config.baseRadius, 0, 0))
-    end
-end
 
 function goSearch()
     if lookAround() or state.numMaterials > 0 then 
         state.mode = modeEnum.mine
     else
-        if not checkPoint.current then genCheckPoint() end
+        if not checkPoint.current then checkPoint:genCheckPoint(space, Config) end
         goToTarget(checkPoint.current)
     end
 end
 
 function mine()
     if state.numMaterials > 0 then
-        goToTarget(Space.findNearestMaterial(space, state.pos, Config.material))
+        goToTarget(space:findNearestMaterial(state.pos, Config.material))
     else
         state.mode = modeEnum.search
     end
@@ -453,7 +341,7 @@ function goBack()
         state.mode = modeEnum.mine
     elseif state.pos:isZero() then
         state.mode = modeEnum.stop
-    elseif state.pos == Cords(Config.baseRadius, 0, 0) or isInSecureRange(state.pos) then
+    elseif state.pos == Cords(Config.baseRadius, 0, 0) or space.isInSecureRange(state.pos, Config) then
         goToTarget(Cords())
     else
         goToTarget(Cords(Config.baseRadius, 0, 0))
@@ -561,5 +449,11 @@ repeat
     turtleSetDirection(0)  
     if not charging() then break end
 until terminateFlag
+
+local toSave = {
+    checkPoint=checkPoint,
+    state=state
+}
+saveFile(Config.staName, toSave)
 
 dbg.close()

@@ -3,11 +3,13 @@
 Cords = {}
 Cords.__index = Cords
 
-local function unpack(packed) return packed.x, packed.y, packed.z end
+function Cords:unpack() return self.x, self.y, self.z end
+
+function Cords.load(cord) return setmetatable(cord, Cords) end
 
 function Cords.new(a, b, c)
     if a~= nil and b == nil and c == nil then
-        a, b, c = unpack(a)
+        a, b, c = a:unpack()
     else
         a, b, c = a or 0, b or 0, c or 0
     end

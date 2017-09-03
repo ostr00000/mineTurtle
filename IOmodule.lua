@@ -1,5 +1,5 @@
 --required files: configName
---required modules: Cords, Space
+--required modules: Cords, Space, TurtleUtils
 --saves and load files
 
 IOmodule = {}
@@ -64,14 +64,16 @@ function IOmodule.init(configName)
         if state.checkPoint.current then
             state.checkPoint.current = Cords.load(state.checkPoint.current)
         end
-        
+
         state.pos = Cords.load(state.pos)
+        _G["state"] = state
     else
         state.config = config
         state.pos = Cords.new()
         state.checkPoint = CheckPoint.create()
+        _G["state"] = state
+        TurtleUtils.stateReset()
     end
-    _G["state"] = state
     
     local space = Space.new()
     if fs.exists(config.mapName) then

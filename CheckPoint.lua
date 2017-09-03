@@ -28,7 +28,7 @@ local function genCordY(c, n)
     else print("ERROR: wrong range Y c:".. c.. " n:".. n) end
 end
 
-function CheckPoint:genCheckPoint(space, config)
+function CheckPoint:genCheckPoint(space)
     local coreFunction = function()
         if self.num == self.limit then
             self.round = self.round + 1 
@@ -44,7 +44,7 @@ function CheckPoint:genCheckPoint(space, config)
     repeat
         self.current = nil
         coreFunction()
-    until not TurtleUtils.isInSecureRange(self.current, config) 
+    until not TurtleUtils.isInSecureRange(self.current) 
           and not space:hasChecked(self.current)
 end
 

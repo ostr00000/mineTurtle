@@ -40,44 +40,78 @@ end
 
 function Movement.setDirection(dir) turtleSetDirection(dir) end
 
-local function checkTerrain(dir, onSuccesValue)
+--return isMaterial, isAllowedMaterial, nameMaterial
+local function checkTerrain(dir)
     if dirFun[dir][1]() then
         local succes, data = dirFun[dir][6]()
-        if succes and data.name == state.config.material then
+        if succes and TurtleUtils.isAllowedMaterial(data.name) then
             local cords
             if dir == "normal" then cords = state.pos:getPosAhead(state.turtleDirection)
             else cords = state.pos + Cords(0, 0, dirFun[dir][3]) end
-            if TurtleUtils.isInSecureRange(cords, state.config) then return false end
-            space:update(cords, onSuccesValue, state)
-            return true
+            if TurtleUtils.isInSecureRange(cords) then return false end
+            if space:update(cords, data.name) then
+                state.numMaterials = state.numMaterials + 1
+            end
+            return true, true, data.name
         end
+        return true, false
     end
     return false
 end
 
 local function lookAround()
     if space:hasChecked(state.pos) then return false
-    else space:update(state.pos, "checked", state) end
+    else space:update(state.pos, "checked") end
     
     local finded = false
+    local function check(dir)
+        local _, isMat, _ = checkTerrain(dir)
+        finded = finded or isMat    
+    end
+    
     for _=1,4 do
-        finded = checkTerrain("normal", state.config.material) or finded
+        check("normal")
         turtleTurn()
     end
-    finded = checkTerrain("up", state.config.material) or finded
-    return checkTerrain("down", state.config.material) or finded
+    check("up")
+    check("down")
+    return finded
 end
 
-local function changePos(direction)
-    if direction == "up" then state.pos = state.pos + Cords(0, 0, 1)
-    elseif direction == "down" then state.pos = state.pos + Cords(0, 0, -1)
-    else state.pos = Cords.getPosAhead(state.pos, state.turtleDirection) end
+local function getPosAfterMove(direction)
+    if direction == "up" then return state.pos + Cords(0, 0, 1)
+    elseif direction == "down" then return state.pos + Cords(0, 0, -1)
+    else return Cords.getPosAhead(state.pos, state.turtleDirection) end
+end
+
+local function setGoBackMode(reason)
+    if reason == "fuel" then print("No fuel")
+    else print("No space in inventory") end
+    state.modeReason = reason
+    local lastMode = state.mode
+    state.mode = Movement.modeEnum.goBack
+    return lastMode ~= Movement.modeEnum.goBack 
 end
 
 local function turtleMove(dir)
-    checkTerrain(dir, "void") -- check if block where I will move is wanted material
-    if dirFun[dir][1]() then  --if there is block then dig
-        dirFun[dir][4]() end
+    if not TurtleUtils.isEnoughFuel() then
+        if setGoBackMode("fuel") then return end
+    end
+    
+    -- check if block where I will move is wanted material
+    local isBlock, isMat, mat = checkTerrain(dir)
+    if isMat and not TurtleUtils.prepareInvenory(mat) then
+        if setGoBackMode("inv") then return end
+    end
+    
+    --if there is block then dig 
+    if isBlock then 
+        dirFun[dir][4]()
+        if isMat then 
+            state.numMaterials = state.numMaterials - 1
+            state.collectedResources = state.collectedResources + 1
+        end
+    end
 
     repeat 
         local isSuccess = dirFun[dir][5]() --try move 
@@ -90,17 +124,7 @@ local function turtleMove(dir)
             end
         end
     until isSuccess 
-    changePos(dir)
-
-    if not state.allSlotsEquipment then TurtleUtils.cleanInventory() end
-    local fuel = TurtleUtils.isEnoughFuel()
-    local inventory = TurtleUtils.isEnoughSpace()
-    if not fuel or not inventory then
-        if not fuel then print("No fuel")
-        else print("No space in inventory") end
-        state.hardReturn = true
-        state.mode = Movement.modeEnum.goBack
-    end
+    state.pos = getPosAfterMove(dir)
 
     if state.pos == state.checkPoint.current then
         state.checkPoint.current = nil 
@@ -111,7 +135,7 @@ local function turtleMove(dir)
 end
 
 local function goToTarget(targetCords)
-    if TurtleUtils.isInSecureRange(state.pos, state.config, 1) then
+    if TurtleUtils.isInSecureRange(state.pos, 1) then
         local testType = function(obj, typ) return getmetatable(obj) == typ end
         assert(testType(state.pos, Cords), "ASSERT: goToTarget: not Cords: state.pos")
         assert(testType(targetCords, Cords), "ASSERT: goToTarget: not Cords: targetCords")
@@ -139,7 +163,7 @@ local function goToTarget(targetCords)
         print("ERROR: I need to go to field where I am") 
     end
     
-    if not state.hardReturn then lookAround() end
+    if state.modeReason ~= "inv" then lookAround() end
 end
 
 
@@ -149,7 +173,7 @@ local function goSearch()
         state.mode = Movement.modeEnum.mine
     else
         if not state.checkPoint.current then
-            state.checkPoint:genCheckPoint(space, state.config) 
+            state.checkPoint:genCheckPoint(space) 
         end
         goToTarget(state.checkPoint.current)
     end
@@ -157,14 +181,14 @@ end
 
 local function mine()
     if state.numMaterials > 0 then
-        goToTarget(space:findNearestMaterial(state.pos, state.config.material))
+        goToTarget(space:findNearestMaterial(state.pos))
     else
         state.mode = Movement.modeEnum.search
     end
 end
 
 local function goBack()
-    if state.numMaterials > 0 and not state.hardReturn then
+    if state.numMaterials > 0 and state.modeReason ~= "fuel" then
         state.mode = Movement.modeEnum.mine
     elseif state.pos:isZero() then
         state.mode = Movement.modeEnum.stop

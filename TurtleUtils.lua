@@ -1,11 +1,13 @@
---reqired modules: Cords
+--reqired modules: Cords, Movement
 
 TurtleUtils = {}
 TurtleUtils.__index = TurtleUtils 
 
+local fuelMin
 function TurtleUtils.initFuel()
     turtle.select(16)
-    if turtle.getFuelLevel() < 10 then 
+    fuelMin = 1 + 4 * state.config.baseRadius
+    if turtle.getFuelLevel() < state.config.baseRadius + fuelMin then 
         print("No fuel - refueling from 16th slot")
         for i=5, 1, -1 do
             print(i)
@@ -23,10 +25,9 @@ end
 function TurtleUtils.stateReset()
     state.numMaterials=0
     state.mode = Movement.modeEnum.search
-    state.freeSpaceInSlot = 0
     state.collectedResources = 0
     state.allSlotsEquipment = false
-    state.hardReturn = false
+    state.modeReason = nil
 
     state.turtleDirection = 0
 --[[if turtle go forward: 
@@ -59,14 +60,23 @@ function TurtleUtils.leaveItems()
 
     local start = 15
     local data = turtle.getItemDetail(16)
-    if data and data.name == state.config.inventoryMaterial then start = 16 end
+    if data and TurtleUtils.isAllowedMaterial(data.name) then start = 16 end
     for i=start,1,-1 do
         turtle.select(i)
-        while not turtle.dropDown() and turtle.getItemCount(i) ~= 0 do
+        turtle.dropDown()
+        while turtle.getItemCount(i) ~= 0 do
             print("Droping items - full inventory")
-            os.sleep(1) 
+            os.sleep(1)
+            turtle.dropDown()
         end
     end
+end
+
+function TurtleUtils.isAllowedMaterial(name)
+    for k, v in ipairs(state.config.materials) do
+        if v.block == name or v.item == name then return true end
+    end
+    return false
 end
 
 function TurtleUtils.isEnoughFuel()
@@ -74,7 +84,8 @@ function TurtleUtils.isEnoughFuel()
     if fuel == "unlimited" then return true end
     local distance = Cords.distance(state.pos, Cords.new())
     turtle.select(16)
-    while fuel <= distance + 1 + 5 * (state.config.baseRadius - 1) do
+    -- 4 because in the worst case turtle must go around base
+    while fuel <= distance + fuelMin do
         if turtle.refuel(0) then 
             turtle.refuel(1)
             fuel = turtle.getFuelLevel()
@@ -82,15 +93,6 @@ function TurtleUtils.isEnoughFuel()
         else return false end
     end
     return true
-end
-
-function TurtleUtils.isEnoughSpace()
-    if state.freeSpaceInSlot ~= 0 then return true end
-    for i=1,15 do
-        state.freeSpaceInSlot = turtle.getItemSpace(i)
-        if state.freeSpaceInSlot > 0 then return true end
-    end
-    return false
 end
 
 
@@ -107,7 +109,7 @@ local function replaceResources()
             local condition = (i ~= 16) -- and if slots is not fuel slot
             if not condition then -- or on fuel slot is resource
                 local data = turtle.getItemDetail(16)
-                if data and data.name == state.config.inventoryMaterial then condition = true end
+                if data and TurtleUtils.isAllowedMaterial(data.name) then condition = true end
             end
             if condition then
                 turtle.select(i)
@@ -130,16 +132,74 @@ end
 function TurtleUtils.cleanInventory()
     for i=1,15 do
         local data = turtle.getItemDetail(i)
-        if data and data.name ~= state.config.inventoryMaterial then
+        if data and not TurtleUtils.isAllowedMaterial(data.name) then
             turtle.select(i)
             turtle.drop()
         end
     end
     turtle.select(16)
     local data = turtle.getItemDetail(16)
-    if data and data.name ~= state.config.inventoryMaterial 
+    if data and not TurtleUtils.isAllowedMaterial(data.name)
        and not turtle.refuel(0) then turtle.drop() end
     if state.collectedResources > 15 then replaceResources() end 
+end
+
+local function findIncompleteSlot(material)
+    for i=1,16 do
+        local data = turtle.getItemDetail(i)
+        if data and data.name == material then
+            local free = turtle.getItemSpace(i)
+            if free > 0 then
+                return true, free
+            end
+        end
+    end
+    return false
+end
+
+local function moveMaterials()
+    for i=1,15 do
+        turtle.select(i)
+        for j=i+1,16 do
+            turtle.transferTo(j)
+            if turtle.getItemDetail() == nil then
+                return true, 64
+            end
+        end
+    end
+    return false
+end
+
+local function getItemMaterial(material)
+    for k, v in ipairs(state.config.materials) do
+        if v.block == material then return v.item end
+    end
+    assert(false, "Material not found")
+end
+
+local curMat = nil
+local freeInSlot = 0
+function TurtleUtils.prepareInvenory(material)
+    material = getItemMaterial(material)
+    if not state.allSlotsEquipment then TurtleUtils.cleanInventory() end
+    
+    if material ~= curMat or freeInSlot == 0 then
+        local suc, free = findIncompleteSlot(material)
+        if not suc then 
+            suc, free = moveMaterials()
+        end
+        if suc then
+            curMat = material
+            freeInSlot = free
+        else
+            state.modeReason = "inventory"
+            state.mode = Movement.modeEnum.goBack
+            return false
+        end
+    else
+        freeInSlot = freeInSlot - 1
+    end
+    return true
 end
 
 function TurtleUtils.initInventory()
@@ -149,13 +209,13 @@ function TurtleUtils.initInventory()
     TurtleUtils.cleanInventory() --clean to count only resources
     for i=1,15 do count(i) end
     local data = turtle.getItemDetail(16)
-    if data and data.name == state.config.inventoryMaterial then count(16) end
+    if data and TurtleUtils.isAllowedMaterial(data.name) then count(16) end
     if state.collectedResources > 15 then replaceResources() end 
 end
 
-function TurtleUtils.isInSecureRange(cords, config, additionalRadious)
+function TurtleUtils.isInSecureRange(cords, additionalRadious)
     local x, y, z = cords:unpack()
-    local radius = config.baseRadius + (additionalRadious or 0)
+    local radius = state.config.baseRadius + (additionalRadious or 0)
     return math.abs(x) < radius and math.abs(y) < radius and math.abs(z) < radius 
 end
 

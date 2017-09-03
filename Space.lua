@@ -1,4 +1,4 @@
---required modules: Cords, Heap
+--required modules: Cords, Heap, TurtleUtils
 -- Space represent searched block position and turtle current position
 
 Space = {}
@@ -18,26 +18,26 @@ function Space:hasChecked(cords)
     return self:getMaterial(cords) == "checked"
 end
 
--- knownMaterials = { material , "void" , "checked" , "secured" }
-function Space:update(cords, val, state)
+local knownMaterials = setmetatable(
+  {["checked"] = true, ["secured"] = true, [true] = true },
+  {__index = function(_, val)return val == nil end})
+  
+function Space:update(cords, val)
     local x, y, z = cords:unpack()
     local dim = self.dim
     if dim[x] == nil then dim[x] = {} end
     if dim[x][y] == nil then dim[x][y] = {} end
+    local firstTime = true
     
-    if state then
-        if val == state.config.material then 
-            if dim[x][y][z] ~= val then --first time apperar
-                state.numMaterials = state.numMaterials + 1 
-            end
-        elseif val == "void" then --material will be mined
-            state.numMaterials = state.numMaterials - 1
-            state.collectedResources = state.collectedResources + 1
-        elseif val ~= "checked" and val ~= "secured" and val ~= nil then 
-            print("ERROR: unknown material") 
+    if TurtleUtils.isAllowedMaterial(val) then 
+        if dim[x][y][z] == val then
+            firstTime = false
         end
+    elseif not knownMaterials[val] then 
+        print("ERROR: unknown material") 
     end
     dim[x][y][z] = val
+    return firstTime
 end
 
 function Space:initBase(baseRadius, state)
@@ -45,15 +45,17 @@ function Space:initBase(baseRadius, state)
 	for i = -length, length do
 		for j = -length, length do
 			for k = -length, length do
-				Space.update(self, Cords.new(i, j, k), "secured", state)
+				Space.update(self, Cords.new(i, j, k), "secured")
 			end
 		end
 	end
-	for i = 0, length do Space.update(self, Cords.new(i, 0, 0), "checked", state) end
+	for i = 0, length do Space.update(self, Cords.new(i, 0, 0), "checked") end
 end
 
-function Space:findNearestMaterial(cord, searchMaterial)
-    local stopCondition = function(material, _) return material == searchMaterial end
+function Space:findNearestMaterial(cord)
+    local stopCondition = function(material, _) 
+        return TurtleUtils.isAllowedMaterial(material)
+    end
     local position, _= self:BFS(cord, stopCondition)
     return position
 end
@@ -69,6 +71,8 @@ local function decode(code)
 end
 
 function Space:findPointInLine(from, to)
+    local isInSec = TurtleUtils.isInSecureRange(to)
+
     local delta = to - from
     local length = delta:length()
     local dif = delta / length
@@ -77,6 +81,7 @@ function Space:findPointInLine(from, to)
         dest = (dif * i + from):round()
         i = i + 1
     until self:getMaterial(dest) ~= "secured" and dest ~= from
+          and (isInSec or not TurtleUtils.isInSecureRange(dest))
     return dest
 end
 
@@ -92,12 +97,12 @@ function Space:BFS(cord, stopCondition, targetPosition)
     self.bfs = Space.new()
     local Data = {}
     Data.__index = Data
-    function Data.new(fdir, cords)
-        local dis = targetPosition:distance(cords) + cord:distance(cords)
+    function Data.new(fdir, cords, dis)
+        dis = dis or -1
         return setmetatable({
                 firstDirection=fdir, 
                 position=cords,
-                distance=dis}, Data) 
+                distance=dis+1}, Data) 
     end
     function Data:__tostring()
         return --"[firstDir:"..(self.firstDirection or 0)
@@ -108,13 +113,14 @@ function Space:BFS(cord, stopCondition, targetPosition)
     
     local heap = Heap.new(function(a,b)return a.distance > b.distance end)
 
-    local add = function(fdir, cord)
+    local add = function(fdir, cord, dis)
         if not self.bfs:getMaterial(cord) then
-            heap:insert(Data(fdir,cord))
+            heap:insert(Data(fdir,cord, dis))
             self.bfs:update(cord, true)
         end
     end
 
+    self.bfs:update(cord, true)
     add("x+", cord + Cords(1, 0, 0))
     add("x-", cord + Cords(-1,0, 0))
     add("y+", cord + Cords(0, 1, 0))
@@ -124,20 +130,19 @@ function Space:BFS(cord, stopCondition, targetPosition)
     while true do
         local data = heap:deleteRoot()
         local position, fdir = data.position, data.firstDirection
-        local mat = self:getMaterial(position)
-        
+        local mat, dis = self:getMaterial(position), data.distance
         if stopCondition(mat, position) then
             self.bfs = nil
             return position, fdir
 		    end
 
 		    if mat ~= "secured" then
-      			add(fdir, position + Cords(1, 0, 0))
-            add(fdir, position + Cords(-1,0, 0))
-            add(fdir, position + Cords(0, 1, 0))
-            add(fdir, position + Cords(0,-1, 0))
-            add(fdir, position + Cords(0, 0, 1))
-            add(fdir, position + Cords(0, 0,-1))
+      			add(fdir, position + Cords(1, 0, 0), dis)
+            add(fdir, position + Cords(-1,0, 0), dis)
+            add(fdir, position + Cords(0, 1, 0), dis)
+            add(fdir, position + Cords(0,-1, 0), dis)
+            add(fdir, position + Cords(0, 0, 1), dis)
+            add(fdir, position + Cords(0, 0,-1), dis)
   		  end
     end
 end

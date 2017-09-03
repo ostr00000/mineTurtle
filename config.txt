@@ -1,10 +1,18 @@
 {
   maxNumOfReturns = 1,
-  inventoryMaterial = "minecraft:quartz",
-  mapName = "turtleWorld",
-  hasChargerInBase = false,
-  debugerName = "turtleDebug",
-  material = "minecraft:quartz_ore",
-  stateName = "turtleState",
   baseRadius = 10,
+  hasChargerInBase = false,
+  mapName = "turtleWorld",
+  stateName = "turtleState",
+  debugerName = "turtleDebug",
+  materials = {
+  	{
+  	  block = "minecraft:quartz_ore",
+  	  item = "minecraft:quartz"
+  	},
+  	{
+  	  block = "minecraft:emerald_ore",
+  	  item = "minecraft:emerald"
+  	}
+  }
 }

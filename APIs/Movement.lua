@@ -59,9 +59,10 @@ local function checkTerrain(dir)
     return false
 end
 
+--turtle look at all 6 direction and check if there are wanted resources
 local function lookAround()
     if space:hasChecked(state.pos) then return false
-    else space:update(state.pos, "checked") end
+    else space:update(state.pos, Space.materialsEnum.checked) end
     
     local finded = false
     local function check(dir)
@@ -84,6 +85,7 @@ local function getPosAfterMove(direction)
     else return Cords.getPosAhead(state.pos, state.turtleDirection) end
 end
 
+--return info if state.mode is changed
 local function setGoBackMode(reason)
     if reason == "fuel" then print("No fuel")
     else print("No space in inventory") end
@@ -93,6 +95,8 @@ local function setGoBackMode(reason)
     return lastMode ~= Movement.modeEnum.goBack 
 end
 
+--before turtle move check fuel, free slots, free space where turtle be,
+--after turtle move set new position in state, check checkPoint, save state
 local function turtleMove(dir)
     if not TurtleUtils.isEnoughFuel() then
         if setGoBackMode("fuel") then return end
@@ -111,6 +115,11 @@ local function turtleMove(dir)
             state.numMaterials = state.numMaterials - 1
             state.collectedResources = state.collectedResources + 1
         end
+    else
+        local mat = space:getMaterial(getPosAfterMove(dir))
+        if TurtleUtils.isAllowedMaterial(mat) then 
+            state.numMaterials = state.numMaterials - 1
+        end
     end
 
     repeat 
@@ -128,12 +137,12 @@ local function turtleMove(dir)
 
     if state.pos == state.checkPoint.current then
         state.checkPoint.current = nil 
-    turtle.digDown()
     end
     
     IOmodule.saveStatus()
 end
 
+--check if is in secure area (can chenge tagetCords) and choose direction to move
 local function goToTarget(targetCords)
     if TurtleUtils.isInSecureRange(state.pos, 1) then
         local testType = function(obj, typ) return getmetatable(obj) == typ end

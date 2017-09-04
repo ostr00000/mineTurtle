@@ -1,4 +1,4 @@
---required files: configName
+--required files: configName.txt
 --required modules: Cords, Space, TurtleUtils
 --saves and load files
 
@@ -6,14 +6,14 @@ IOmodule = {}
 IOmodule.__index = IOmodule
 
 local function loadFile(filename)
-    local file = fs.open(filename, "r") --readonly
+    local file = fs.open(path..filename, "r") --readonly
     local struct = textutils.unserialize(file.readAll())
     file.close()
     return struct
 end
 
 local function saveFile(filename, struct)
-    local file = fs.open(filename, "w") --rewrite file
+    local file = fs.open(path..filename, "w") --rewrite file
     file.write(textutils.serialize(struct))
     file.close()
 end 
@@ -30,7 +30,7 @@ end
 local dbg
 local function initDbg(debugerName)
     local oldPrint = print
-    dbg = fs.open(debugerName, "w")
+    dbg = fs.open(path..debugerName, "w")
     _G["print"] = function(...) 
         for i, v in ipairs(arg) do
             if v == nil then dbg.write("nil\t")
@@ -54,10 +54,12 @@ end
 
 function IOmodule.init(configName)
     local config = loadFile(configName)
-    initDbg(config.debugerName)
+    if config.debug then initDbg(config.debugerName) end
     
+    --load or create state
     local state = {}
-    if fs.exists(config.stateName) then
+    if fs.exists(path..config.stateName) then
+        print("Loading file with state")
         state = loadFile(config.stateName)
         assert(checkConfig(state.config, config), "different configurations")
         state.checkPoint = setmetatable(state.checkPoint, CheckPoint)
@@ -68,6 +70,7 @@ function IOmodule.init(configName)
         state.pos = Cords.load(state.pos)
         _G["state"] = state
     else
+        print("Generate state")
         state.config = config
         state.pos = Cords.new()
         state.checkPoint = CheckPoint.create()
@@ -75,10 +78,14 @@ function IOmodule.init(configName)
         TurtleUtils.stateReset()
     end
     
+    
+    --load or create map
     local space = Space.new()
-    if fs.exists(config.mapName) then
+    if fs.exists(path..config.mapName) then
+        print("Loading file with map")
         space.dim = loadFile(config.mapName) 
     else
+        print("Generate map")
         space:initBase(config.baseRadius, state)
     end
     _G["space"] = space

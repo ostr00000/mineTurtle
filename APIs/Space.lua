@@ -15,11 +15,15 @@ function Space:getMaterial(cords)
 end
 
 function Space:hasChecked(cords)
-    return self:getMaterial(cords) == "checked"
+    return self:getMaterial(cords) == Space.materialsEnum.checked
 end
 
+Space.materialsEnum = { checked="c", secured="s"}
+
 local knownMaterials = setmetatable(
-  {["checked"] = true, ["secured"] = true, [true] = true },
+  {[Space.materialsEnum.checked] = true,
+   [Space.materialsEnum.secured] = true,
+   [true] = true },
   {__index = function(_, val)return val == nil end})
   
 function Space:update(cords, val)
@@ -45,11 +49,13 @@ function Space:initBase(baseRadius, state)
 	for i = -length, length do
 		for j = -length, length do
 			for k = -length, length do
-				Space.update(self, Cords.new(i, j, k), "secured")
+				Space.update(self, Cords.new(i, j, k), Space.materialsEnum.secured)
 			end
 		end
 	end
-	for i = 0, length do Space.update(self, Cords.new(i, 0, 0), "checked") end
+	for i = 0, length do 
+	   Space.update(self, Cords.new(i, 0, 0), Space.materialsEnum.checked)
+	end
 end
 
 function Space:findNearestMaterial(cord)
@@ -70,8 +76,9 @@ local function decode(code)
     else return Cords(0, 0, sign) end
 end
 
+--find nearest not secured point, different from current position
 function Space:findPointInLine(from, to)
-    local isInSec = TurtleUtils.isInSecureRange(to)
+    if TurtleUtils.isInSecureRange(to) then return to end
 
     local delta = to - from
     local length = delta:length()
@@ -80,8 +87,7 @@ function Space:findPointInLine(from, to)
     repeat
         dest = (dif * i + from):round()
         i = i + 1
-    until self:getMaterial(dest) ~= "secured" and dest ~= from
-          and (isInSec or not TurtleUtils.isInSecureRange(dest))
+    until not TurtleUtils.isInSecureRange(dest) and dest ~= from
     return dest
 end
 
@@ -93,29 +99,31 @@ function Space:findNearestPosition(cord, targetPosition)
 end
 
 function Space:BFS(cord, stopCondition, targetPosition)
-    targetPosition = targetPosition or cord
     self.bfs = Space.new()
     local Data = {}
     Data.__index = Data
-    function Data.new(fdir, cords, dis)
-        dis = dis or -1
+    function Data.new(fdir, cords, rec)
+        rec = rec or 0
+        local dis = targetPosition:distance(cords)
         return setmetatable({
                 firstDirection=fdir, 
                 position=cords,
-                distance=dis+1}, Data) 
+                recurrence=rec+1,
+                distance=rec+dis}, Data) 
     end
     function Data:__tostring()
         return --"[firstDir:"..(self.firstDirection or 0)
                "[".." position:"..tostring(self.position)
-               .."distance:"..self.distance.."]"
+               .." recurrence:"
+               .." distance:"..self.distance.."]"
     end
     setmetatable(Data, {__call = function(_, ...)return Data.new(...)end})
     
     local heap = Heap.new(function(a,b)return a.distance > b.distance end)
 
-    local add = function(fdir, cord, dis)
+    local add = function(fdir, cord, rec)
         if not self.bfs:getMaterial(cord) then
-            heap:insert(Data(fdir,cord, dis))
+            heap:insert(Data(fdir, cord, rec))
             self.bfs:update(cord, true)
         end
     end
@@ -130,19 +138,19 @@ function Space:BFS(cord, stopCondition, targetPosition)
     while true do
         local data = heap:deleteRoot()
         local position, fdir = data.position, data.firstDirection
-        local mat, dis = self:getMaterial(position), data.distance
+        local mat, rec = self:getMaterial(position), data.recurrence
         if stopCondition(mat, position) then
             self.bfs = nil
             return position, fdir
 		    end
 
-		    if mat ~= "secured" then
-      			add(fdir, position + Cords(1, 0, 0), dis)
-            add(fdir, position + Cords(-1,0, 0), dis)
-            add(fdir, position + Cords(0, 1, 0), dis)
-            add(fdir, position + Cords(0,-1, 0), dis)
-            add(fdir, position + Cords(0, 0, 1), dis)
-            add(fdir, position + Cords(0, 0,-1), dis)
+		    if mat ~= Space.materialsEnum.secured then
+      			add(fdir, position + Cords(1, 0, 0), rec)
+            add(fdir, position + Cords(-1,0, 0), rec)
+            add(fdir, position + Cords(0, 1, 0), rec)
+            add(fdir, position + Cords(0,-1, 0), rec)
+            add(fdir, position + Cords(0, 0, 1), rec)
+            add(fdir, position + Cords(0, 0,-1), rec)
   		  end
     end
 end

@@ -1,5 +1,6 @@
 {
   maxNumOfReturns = 1,
+  debug = false,
   baseRadius = 10,
   hasChargerInBase = false,
   mapName = "turtleWorld",

@@ -23,7 +23,6 @@ function TurtleUtils.initFuel()
 end
 
 function TurtleUtils.stateReset()
-    state.numMaterials=0
     state.mode = Movement.modeEnum.search
     state.collectedResources = 0
     state.allSlotsEquipment = false

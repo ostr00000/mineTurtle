@@ -74,6 +74,7 @@ function IOmodule.init(configName)
         state.config = config
         state.pos = Cords.new()
         state.checkPoint = CheckPoint.create()
+        state.numMaterials=0
         _G["state"] = state
         TurtleUtils.stateReset()
     end

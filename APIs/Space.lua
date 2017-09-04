@@ -99,6 +99,7 @@ function Space:findNearestPosition(cord, targetPosition)
 end
 
 function Space:BFS(cord, stopCondition, targetPosition)
+    targetPosition = targetPosition or Cords(cord)
     self.bfs = Space.new()
     local Data = {}
     Data.__index = Data
